@@ -4,41 +4,43 @@ from pyglet.gl import *
 from pyglet.window import key
 import NeuralNetwork as NN
 
-# from Files import test
+car_img = pyglet.resource.image("Car.JPG")
+car_img.anchor_x = car_img.width/2
+car_img.anchor_y = car_img.height/2
 
 class Car(pyglet.sprite.Sprite):
     def __init__(self,*args, **kwargs):
         super().__init__(img=car_img, *args, **kwargs)
+        self.x, self.y = 500, 85
         self.vel_x, self.vel_y = 0, 0
         self.acc = 200
         self.speed = 0
-        self.color = (255,0,255)
         self.turn_speed = 150
-        self.colr = ('c3B',(255,0,0, 255,0,0))
+
+        self.DISTANCES = [1,1,1,1,1] # Temporary Fix. Must come before update
+        self.color = (255,0,255)
+
         self.key_handler = key.KeyStateHandler()
         self.event_handlers = [self, self.key_handler]
+
         self.score = 0
         self.genes = []
         self.checkpoints = []
-        # self.visible = False
         self.alive = True
 
-        self.Net = None
+        # self.Net = None
 
         self.rays = []
-        for angle in [-50,-25,0,25,50]:
+        for angle in [-40,-20,0,20,40]:
             self.rays.append(Ray((self.x,self.y),angle-90))
 
     def update(self, dt):
         if self.alive == False:
-            # self.get_score()
             return
 
-        """
-        The check_walls function happens outside of this, but before this happens
-
-        """
-        turn_rate = self.Net.feed_forward(self.DISTANCES)
+        # turn_rate = self.Net.feed_forward(self.DISTANCES)
+        turn_rate = NN.feed_forward(self.genes, self.DISTANCES)
+        # print("rate", turn_rate)
         self.rotation += turn_rate * self.turn_speed * dt
 
         angle = -math.radians(self.rotation)
@@ -84,8 +86,8 @@ class Car(pyglet.sprite.Sprite):
         if self.y < min_y: self.y = max_y
         if self.y > max_y: self.y = min_y
 
-    def check_walls(self, walls):
-        FURTHEST_CHECK = 200
+    def look(self, walls):
+        FURTHEST_CHECK = 400
         self.DISTANCES = []
         for ray in self.rays:
             ray.pos = (self.x, self.y)
@@ -101,7 +103,7 @@ class Car(pyglet.sprite.Sprite):
             if CLOSEST_WALL == FURTHEST_CHECK:
                 CLOSEST_POINT = [self.x + FURTHEST_CHECK*ray.dir[0],
                                  self.y + FURTHEST_CHECK*ray.dir[1]]
-            ray.show(CLOSEST_POINT)
+            # ray.show(CLOSEST_POINT)
             self.DISTANCES.append(CLOSEST_WALL / FURTHEST_CHECK)
         return self.DISTANCES
 
@@ -139,17 +141,43 @@ class Car(pyglet.sprite.Sprite):
     def update_score(self, gate):
         if gate not in self.checkpoints:
             self.checkpoints.append(gate)
+            self.score += 1
             # print(len(self.checkpoints))
         if len(self.checkpoints) == 20:
             self.checkpoints = []
-            self.score += 20
+            # self.score += 20
+        if self.score >= 29:
+            self.alive = False
 
-    def get_genes(self, DNA):
-        self.genes = DNA
-        self.Net = NN.NeuralNet(self.genes, [1,1,1,1,1]) # Fix this
-        # self.x = 500
-        # self.y = 85
-        # self.rotation = 0
+    def get_genes(self, nodes, genes=None):
+        if genes == None:
+            self.rand_genes(nodes)
+        else:
+            self.genes = genes
+        self.alive = True
+        # self.Net = NN.NeuralNet(self.genes, [1,1,1,1,1])
+        # self.Net = NN.feed_forward(self.genes, [1,1,1,1,1]) # Fix this
+
+    def rand_genes(self, nodes):
+        self.genes = []
+        weights = []
+        biases = []
+        # Weights
+        for layer in range(len(nodes)-1):
+            w = []
+            for node1 in range(nodes[layer]):
+                for node2 in range(nodes[layer+1]):
+                    w.append(np.random.random()*10-5)
+            weights.append(w)
+        self.genes.append(weights)
+        # Biases
+        for i in nodes[1:]: # Should this only go until -1?
+            b = []
+            for node in range(i):
+                b.append(np.random.random()*10-5)
+            biases.append(b)
+        self.genes.append(biases)
+        print("Genes Created", self.genes)
 
 
 class Ray(object):
@@ -188,99 +216,3 @@ class Ray(object):
             return pt
         else:
             return
-
-
-class Boundary(object):
-    def __init__(self,p1,p2):
-        self.a = p1
-        self.b = p2
-    def show(self):
-        pyglet.graphics.draw(2,GL_LINES,
-            ('v2f',(self.a[0],self.a[1],self.b[0],self.b[1])))
-
-
-def create_track(width,height):
-    # This function creates the track that is driven on and creates checkpoints
-    # along the track to incentivise travel.
-    O_BORDER = 50
-    I_BORDER = 130
-    walls = []
-    outer_border = ([O_BORDER,O_BORDER*4],[O_BORDER,height-4*O_BORDER],
-        [2*O_BORDER,height-2*O_BORDER],[4*O_BORDER,height-O_BORDER],
-        [width-4*O_BORDER,height-O_BORDER],[width-2*O_BORDER,height-2*O_BORDER],
-        [width-O_BORDER,height-4*O_BORDER],[width-O_BORDER,4*O_BORDER],
-        [width-2*O_BORDER,2*O_BORDER],[width-4*O_BORDER,O_BORDER],
-        [4*O_BORDER,O_BORDER],[2*O_BORDER,2*O_BORDER])
-    for i in range(len(outer_border)):
-        walls.append(Boundary(outer_border[i-1],outer_border[i]))
-    inner_border = ([1.25*I_BORDER,I_BORDER*2],[1.25*I_BORDER,height-2*I_BORDER],
-        [1.5*I_BORDER,height-1.5*I_BORDER],[2.5*I_BORDER,height-I_BORDER],
-        [width-2.5*I_BORDER,height-I_BORDER],[width-1.5*I_BORDER,height-1.5*I_BORDER],
-        [width-1.25*I_BORDER,height-2*I_BORDER],[width-1.25*I_BORDER,2*I_BORDER],
-        [width-1.5*I_BORDER,1.5*I_BORDER],[width-2.5*I_BORDER,I_BORDER],
-        [2.5*I_BORDER,I_BORDER],[1.5*I_BORDER,1.5*I_BORDER])
-    for i in range(len(outer_border)):
-        walls.append(Boundary(inner_border[i-1],inner_border[i]))
-
-    checkpoints = []
-    points = (((I_BORDER*1.25,height/2),(O_BORDER,height/2)),
-        ((width-I_BORDER*1.25,height/2),(width-O_BORDER,height/2)),
-        ((width/2,height-O_BORDER),(width/2,height-I_BORDER)),
-        ((width/2+125,height-O_BORDER),(width/2+100,height-I_BORDER)),
-        ((width/2-125,height-O_BORDER),(width/2-100,height-I_BORDER)),
-        ((width/2+125,O_BORDER),(width/2+100,I_BORDER)),
-        ((width/2-125,O_BORDER),(width/2-100,I_BORDER)),
-        ((width/2,O_BORDER),(width/2,I_BORDER)))
-    for i in range(len(inner_border)):
-        checkpoints.append(Boundary(inner_border[i],outer_border[i]))
-    for i in range(len(points)):
-        checkpoints.append(Boundary(points[i][0],points[i][1]))
-    return walls, checkpoints
-
-car_img = pyglet.resource.image("Car.JPG")
-car_img.anchor_x = car_img.width/2
-car_img.anchor_y = car_img.height/2
-
-if __name__ == '__main__':
-    width, height = 1000, 700
-    game_window = pyglet.window.Window(width,height)
-    walls, checkpoints = create_track(width,height)
-
-    neuron_shape = (5,4,3,1)
-    GA = NN.GeneticAlgorithm(1, 0.01)
-    GA.create_population(GA.pop_size, neuron_shape)
-
-    # car = Car(x=500,y=85)
-    # for handler in car.event_handlers:
-    #     game_window.push_handlers(handler)
-
-    @game_window.event
-    def on_draw():
-        game_window.clear()
-        # car.visible = True
-        for car in GA.pop:
-            for wall in walls:
-                wall.show()
-                pt = car[1].check_collision(wall)
-                if pt: car[1].alive = False
-            car[1].check_walls(walls)
-            for gate in checkpoints:
-                pt = car[1].check_collision(gate)
-                if pt:
-                    car[1].update_score(gate)
-            car[1].draw()
-
-            stopped_cars = 0
-            for car in GA.pop:
-                # print("Stopped Cars", stopped_cars)
-                if car[1].alive == False:
-                    stopped_cars += 1
-
-                if stopped_cars == GA.pop_size:
-                    GA.calc_fitness()
-                    GA.evolve()
-
-    for car in GA.pop:
-        pyglet.clock.schedule_interval(car[1].update, 1 / 120.0)
-
-    pyglet.app.run()
